@@ -37,6 +37,7 @@ archive: clean  ## Create the archive for AWS lambda
 	mkdir -p ./bin
 	docker run -v "$(current_dir)/build:/opt/mount" --rm bucket-antivirus-function:latest  bash -c "cp -r ${container_dir}/* /opt/mount/"
 	sam build --use-container
+	docker run -v "$(current_dir)/.aws-sam:/opt/mount" -w /opt/mount/build/ScanFunction --rm bucket-antivirus-function:latest  bash -c "zip -r9 /opt/mount/lambda.zip *"
 
 .PHONY: pre_commit_install  ## Ensure that pre-commit hook is installed and kept up to date
 pre_commit_install: .git/hooks/pre-commit ## Ensure pre-commit is installed
