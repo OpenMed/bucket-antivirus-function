@@ -17,6 +17,7 @@ import copy
 import json
 import os
 import signal
+import tempfile
 from urllib.parse import unquote_plus
 from distutils.util import strtobool
 
@@ -99,10 +100,6 @@ def verify_s3_object_version(s3, s3_object):
         raise Exception(
             "Object versioning is not enabled in bucket %s" % s3_object.bucket_name
         )
-
-
-def get_local_path(s3_object, local_prefix):
-    return os.path.join(local_prefix, s3_object.bucket_name, s3_object.key)
 
 
 def delete_s3_object(s3_object):
@@ -246,41 +243,43 @@ def lambda_handler(event, context):
         start_scan_time = get_timestamp()
         sns_start_scan(sns_client, s3_object, AV_SCAN_START_SNS_ARN, start_scan_time)
 
-    file_path = get_local_path(s3_object, "/tmp")
-    create_dir(os.path.dirname(file_path))
-    s3_object.download_file(file_path)
+    file_name = os.path.basename(s3_object.key)
+    if not file_name:
+        print("Object is not a file")
+        stop_scan_time = get_timestamp()
+        print("Script finished at %s\n" % stop_scan_time)
+        return
 
-    scan_result, scan_signature = clamav.scan_file(file_path)
-    print(
-        "Scan of s3://%s resulted in %s\n"
-        % (os.path.join(s3_object.bucket_name, s3_object.key), scan_result)
-    )
+    with tempfile.TemporaryDirectory(dir='/tmp') as tmpdirname:
+        file_path = os.path.join(tmpdirname, file_name)
+        s3_object.download_file(file_path)
 
-    result_time = get_timestamp()
-    # Set the properties on the object with the scan results
-    if "AV_UPDATE_METADATA" in os.environ:
-        set_av_metadata(s3_object, scan_result, scan_signature, result_time)
-    set_av_tags(s3_client, s3_object, scan_result, scan_signature, result_time)
-
-    # Publish the scan results
-    if AV_STATUS_SNS_ARN not in [None, ""]:
-        sns_scan_results(
-            sns_client,
-            s3_object,
-            AV_STATUS_SNS_ARN,
-            scan_result,
-            scan_signature,
-            result_time,
+        scan_result, scan_signature = clamav.scan_file(tmpdirname)
+        print(
+            "Scan of s3://%s resulted in %s\n"
+            % (os.path.join(s3_object.bucket_name, s3_object.key), scan_result)
         )
 
-    metrics.send(
-        env=ENV, bucket=s3_object.bucket_name, key=s3_object.key, status=scan_result
-    )
-    # Delete downloaded file to free up room on re-usable lambda function container
-    try:
-        os.remove(file_path)
-    except OSError:
-        pass
+        result_time = get_timestamp()
+        # Set the properties on the object with the scan results
+        if "AV_UPDATE_METADATA" in os.environ:
+            set_av_metadata(s3_object, scan_result, scan_signature, result_time)
+        set_av_tags(s3_client, s3_object, scan_result, scan_signature, result_time)
+
+        # Publish the scan results
+        if AV_STATUS_SNS_ARN not in [None, ""]:
+            sns_scan_results(
+                sns_client,
+                s3_object,
+                AV_STATUS_SNS_ARN,
+                scan_result,
+                scan_signature,
+                result_time,
+            )
+
+        metrics.send(
+            env=ENV, bucket=s3_object.bucket_name, key=s3_object.key, status=scan_result
+        )
     if str_to_bool(AV_DELETE_INFECTED_FILES) and scan_result == AV_STATUS_INFECTED:
         delete_s3_object(s3_object)
     stop_scan_time = get_timestamp()
