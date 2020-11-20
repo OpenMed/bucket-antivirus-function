@@ -50,6 +50,7 @@ RUN echo "DatabaseDirectory /tmp/clamav_defs" > /opt/app/clamav/scan.conf
 RUN echo "PidFile /tmp/clamd.pid" >> /opt/app/clamav/scan.conf
 RUN echo "LocalSocket /tmp/clamd.sock" >> /opt/app/clamav/scan.conf
 RUN echo "LogFile /tmp/clamd.log" >> /opt/app/clamav/scan.conf
+RUN echo "MaxFileSize 209715201" >> /opt/app/clamav/scan.conf
 
 # Fix the freshclam.conf settings
 RUN echo "DatabaseMirror database.clamav.net" > /opt/app/clamav/freshclam.conf
