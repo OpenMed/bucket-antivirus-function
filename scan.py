@@ -40,6 +40,7 @@ from common import AV_STATUS_SNS_PUBLISH_CLEAN
 from common import AV_STATUS_SNS_PUBLISH_INFECTED
 from common import AV_TIMESTAMP_METADATA
 from common import AV_SCAN_MAX_FILE_SIZE
+from common import AV_FANOUT_SQS_NAME
 from common import create_dir
 from common import get_timestamp
 
@@ -199,6 +200,25 @@ def sns_scan_results(
     )
 
 
+def sqs_fanout_event(sqs_client, sqs_name, event, scan_result, scan_signature):
+    url = sqs_client.get_queue_url(QueueName=sqs_name)['QueueUrl']
+    sqs_client.send_message(
+        QueueUrl=url,
+        DelaySeconds=0,
+        MessageBody=json.dumps(event),
+        MessageAttributes={
+            'scan_result': {
+                'DataType': 'String',
+                'StringValue': scan_result
+            },
+            'scan_signature': {
+                'DataType': 'String',
+                'StringValue': scan_signature
+            }
+        }
+    )
+
+
 def kill_process_by_pid(pid):
     # Check if process is running on PID
     try:
@@ -220,6 +240,7 @@ def lambda_handler(event, context):
     s3 = boto3.resource("s3")
     s3_client = boto3.client("s3")
     sns_client = boto3.client("sns")
+    sqs_client = boto3.client("sqs")
 
     # Get some environment variables
     ENV = os.getenv("ENV", "")
@@ -258,6 +279,14 @@ def lambda_handler(event, context):
     with tempfile.TemporaryDirectory(dir='/tmp') as tmpdirname:
         file_path = os.path.join(tmpdirname, file_name)
         if AV_SCAN_MAX_FILE_SIZE and s3_object.content_length > int(AV_SCAN_MAX_FILE_SIZE):
+            if AV_FANOUT_SQS_NAME not in [None, ""]:
+                sqs_fanout_event(
+                    sqs_client,
+                    AV_FANOUT_SQS_NAME,
+                    event,
+                    scan_result="INVALID_SIZE",
+                    scan_signature="NAN",
+                )
             print("Maximum file size exceeded %s > %s " % (s3_object.content_length, int(AV_SCAN_MAX_FILE_SIZE)))
             return
 
@@ -270,6 +299,14 @@ def lambda_handler(event, context):
         )
 
         result_time = get_timestamp()
+        if AV_FANOUT_SQS_NAME not in [None, ""]:
+            sqs_fanout_event(
+                sqs_client,
+                AV_FANOUT_SQS_NAME,
+                event,
+                scan_result,
+                scan_signature
+            )
         # Set the properties on the object with the scan results
         if "AV_UPDATE_METADATA" in os.environ:
             set_av_metadata(s3_object, scan_result, scan_signature, result_time)
