@@ -231,6 +231,10 @@ def lambda_handler(event, context):
         clamd_pid = clamav.start_clamd_daemon()
         print("Clamd PID: %s" % clamd_pid)
 
+    if not event:
+        # allow Lambda function warm-up
+        return
+
     start_time = get_timestamp()
     print("Script starting at %s\n" % (start_time))
     s3_object = event_object(event, event_source=EVENT_SOURCE)
