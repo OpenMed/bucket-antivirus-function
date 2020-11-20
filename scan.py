@@ -39,6 +39,7 @@ from common import AV_STATUS_SNS_ARN
 from common import AV_STATUS_SNS_PUBLISH_CLEAN
 from common import AV_STATUS_SNS_PUBLISH_INFECTED
 from common import AV_TIMESTAMP_METADATA
+from common import AV_SCAN_MAX_FILE_SIZE
 from common import create_dir
 from common import get_timestamp
 
@@ -256,6 +257,10 @@ def lambda_handler(event, context):
 
     with tempfile.TemporaryDirectory(dir='/tmp') as tmpdirname:
         file_path = os.path.join(tmpdirname, file_name)
+        if AV_SCAN_MAX_FILE_SIZE and s3_object.content_length > int(AV_SCAN_MAX_FILE_SIZE):
+            print("Maximum file size exceeded %s > %s " % (s3_object.content_length, int(AV_SCAN_MAX_FILE_SIZE)))
+            return
+
         s3_object.download_file(file_path)
 
         scan_result, scan_signature = clamav.scan_file(tmpdirname)
