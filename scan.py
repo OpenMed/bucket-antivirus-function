@@ -231,7 +231,7 @@ def lambda_handler(event, context):
         clamd_pid = clamav.start_clamd_daemon()
         print("Clamd PID: %s" % clamd_pid)
 
-    if not event:
+    if event.get('source') == 'aws.events':
         # allow Lambda function warm-up
         return
 
